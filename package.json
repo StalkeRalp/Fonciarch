@@ -1,0 +1,40 @@
+{
+  "name": "fonciarch",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build && node scripts/build-pwa-assets.mjs",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "node scripts/test-workspace.mjs && node scripts/test-offline.mjs && node scripts/test-pwa.mjs && node scripts/test-supabase-config.mjs && node scripts/test-storage.mjs && node scripts/test-import-xlsx.mjs",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit --project tsconfig.app.json",
+    "test:pwa": "node scripts/test-pwa.mjs",
+    "test:offline": "node scripts/test-offline.mjs",
+    "supabase:check": "node --env-file=.env.local scripts/check-supabase.mjs",
+    "test:storage": "node scripts/test-storage.mjs",
+    "test:import": "node scripts/test-import-xlsx.mjs"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^7.0.6",
+    "lucide-react": "^1.72.0",
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-hook-form": "^7.92.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "4.3.3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

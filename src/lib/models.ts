@@ -1,0 +1,9 @@
+export const roles = ["Administrateur", "Superviseur", "Agent de saisie", "Agent de consultation"] as const;
+export const statuses = ["Disponible", "Sorti", "Introuvable", "Archivé"] as const;
+export type Role = typeof roles[number];
+export type User = { id: string; name: string; email: string; role: Role; active: boolean; createdAt: string };
+export type Title = { id: string; number: string; category: string; cadastre?: string; box: string; status: string; date: string; updatedAt: string; notes: string; createdBy: string };
+export type Box = { id: string; number: string; createdAt: string };
+export type Activity = { id: string; date: string; actor: string; actorId: string; action: string; item: string; before: unknown; after: unknown };
+export type ServiceSettings = { name: string; cadastre: string; location: string };
+export type Workspace = { backendId?: string; capabilities?: { titleCadastre?: boolean }; user: User | null; directAccess?: boolean; titles: Title[]; boxes: Box[]; users: User[]; activities: Activity[]; settings: ServiceSettings };

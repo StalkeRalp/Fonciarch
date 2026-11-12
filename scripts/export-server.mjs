@@ -1,0 +1,10 @@
+import { writeFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+const origin = process.argv[2] || "http://localhost:3000";
+const output = process.argv[3] || "output/fonciarch-server.json";
+const response = await fetch(`${origin.replace(/\/$/, "")}/api/workspace`);
+if (!response.ok) throw new Error("Le registre du serveur n’a pas pu être exporté.");
+const snapshot = await response.json();
+await mkdir(dirname(output), { recursive: true });
+await writeFile(output, JSON.stringify(snapshot, null, 2), { mode: 0o600, flag: "wx" });
+console.log(`Copie enregistrée : ${snapshot.titles.length} titres, ${snapshot.boxes.length} boxes. Ne diffusez pas ce fichier hors du service.`);

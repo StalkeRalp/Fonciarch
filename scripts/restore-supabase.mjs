@@ -1,0 +1,12 @@
+import { readFile } from "node:fs/promises";
+if (!process.argv[2]) throw new Error("Usage : node --env-file=.env.local scripts/restore-supabase.mjs CHEMIN_COPIE_JSON");
+const data = JSON.parse(await readFile(process.argv[2], "utf8"));
+if (data.operations?.length) throw new Error("Synchronisez ou résolvez toutes les opérations locales avant la migration.");
+const snapshot = data.base || data;
+if (!Array.isArray(snapshot.titles) || !Array.isArray(snapshot.boxes)) throw new Error("Copie invalide.");
+const { SUPABASE_URL: url, SUPABASE_SECRET_KEY: key } = process.env;
+if (!url?.startsWith("https://") || !key) throw new Error("Renseignez SUPABASE_URL et SUPABASE_SECRET_KEY côté serveur.");
+const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/rpc/fonciarch_restore`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ p_snapshot: snapshot }) });
+const result = await response.json();
+if (!response.ok) throw new Error(result.message || "Restauration refusée.");
+console.log(`Migration terminée : ${result.titles} titres, ${result.boxes} boxes. Vérifiez le registre avant de changer le backend.`);
