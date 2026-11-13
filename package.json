@@ -7,13 +7,14 @@
     "build": "next build && node scripts/build-pwa-assets.mjs",
     "start": "next start",
     "lint": "eslint",
-    "test": "node scripts/test-workspace.mjs && node scripts/test-offline.mjs && node scripts/test-pwa.mjs && node scripts/test-supabase-config.mjs && node scripts/test-storage.mjs && node scripts/test-import-xlsx.mjs",
+    "test": "node scripts/test-workspace.mjs && node scripts/test-offline.mjs && node scripts/test-pwa.mjs && node scripts/test-supabase-config.mjs && node scripts/test-storage.mjs && node scripts/test-import-xlsx.mjs && node scripts/test-sync-cadence.mjs",
     "typecheck": "node node_modules/typescript/bin/tsc --noEmit --project tsconfig.app.json",
     "test:pwa": "node scripts/test-pwa.mjs",
     "test:offline": "node scripts/test-offline.mjs",
     "supabase:check": "node --env-file=.env.local scripts/check-supabase.mjs",
     "test:storage": "node scripts/test-storage.mjs",
-    "test:import": "node scripts/test-import-xlsx.mjs"
+    "test:import": "node scripts/test-import-xlsx.mjs",
+    "test:sync": "node scripts/test-sync-cadence.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^7.0.6",

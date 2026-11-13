@@ -1,6 +1,6 @@
 /* global self, caches */
-const CACHE = "fonciarch-pwa-6960903faa769bf4";
-const STATIC = ["/modeles/titres-vierge.xlsx", "/modeles/titres-exemple.xlsx", "/", "/offline.html", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/icon-32.png", "/icons/maskable-512.png", "/manifest.webmanifest", "/favicon.ico"];
+const CACHE = "fonciarch-pwa-ed4bbb393a81dc01";
+const STATIC = ["/modeles/titres-vierge.xlsx", "/modeles/titres-exemple.xlsx", "/", "/application", "/offline.html", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/icon-32.png", "/icons/maskable-512.png", "/manifest.webmanifest", "/favicon.ico"];
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
@@ -24,7 +24,7 @@ self.addEventListener("fetch", event => {
   // API, écritures et données métier : toujours le réseau, jamais le cache.
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
   if (request.mode === "navigate" && !url.pathname.startsWith("/modeles/")) {
-    event.respondWith(fetch(request).catch(() => caches.open(CACHE).then(async cache => await cache.match("/") || await cache.match("/offline.html") || new Response("Hors connexion. Reconnectez-vous au serveur FONCIARCH.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } }))));
+    event.respondWith(fetch(request).catch(() => caches.open(CACHE).then(async cache => await cache.match(url.pathname.startsWith("/application") ? "/application" : "/") || await cache.match("/offline.html") || new Response("Hors connexion. Reconnectez-vous au serveur FONCIARCH.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } }))));
     return;
   }
   if (STATIC.includes(url.pathname) || url.pathname.startsWith("/_next/static/")) {

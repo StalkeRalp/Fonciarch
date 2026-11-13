@@ -1,0 +1,375 @@
+-- Mise à jour d’un projet où le schéma FONCIARCH de base est déjà installé.
+-- À exécuter dans Supabase > SQL Editor. Conserve les titres, boxes et fichiers existants.
+
+-- Exécuter après 202611120001_fonciarch.sql. Aucun fichier n’est rendu public.
+begin;
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types) values
+ ('fonciarch-imports','fonciarch-imports',false,10485760,array['text/csv','text/plain','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']),
+ ('fonciarch-documents','fonciarch-documents',false,20971520,array['application/pdf','image/jpeg','image/png']),
+ ('fonciarch-exports','fonciarch-exports',false,20971520,array['text/csv','application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+on conflict(id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
+
+do $$ begin
+ if not (select relrowsecurity from pg_class where oid='storage.objects'::regclass) then raise exception 'Storage doit avoir RLS activé avant l’installation des permissions.'; end if;
+end $$;
+-- Les éventuelles autres politiques permissives ne doivent pas exposer ces buckets.
+drop policy if exists fonciarch_private_objects on storage.objects;
+create policy fonciarch_private_objects on storage.objects as restrictive for all to anon,authenticated
+ using(bucket_id not in ('fonciarch-imports','fonciarch-documents','fonciarch-exports'))
+ with check(bucket_id not in ('fonciarch-imports','fonciarch-documents','fonciarch-exports'));
+
+create table if not exists public.fonciarch_files (
+ id uuid primary key,
+ kind text not null check(kind in ('import','document','export')),
+ bucket text not null,
+ object_path text not null,
+ original_name text not null check(length(original_name) between 1 and 255),
+ mime_type text not null,
+ size_bytes bigint not null check(size_bytes>0 and size_bytes<=20971520),
+ sha256 text not null check(sha256 ~ '^[0-9a-f]{64}$'),
+ title_id uuid references public.fonciarch_titles(id) on delete restrict,
+ import_operation_id uuid,
+ created_at timestamptz not null default clock_timestamp(),
+ unique(bucket,object_path),
+ check((kind='import' and bucket='fonciarch-imports' and size_bytes<=10485760) or (kind='document' and bucket='fonciarch-documents') or (kind='export' and bucket='fonciarch-exports'))
+);
+create index if not exists fonciarch_files_date_idx on public.fonciarch_files(created_at desc,id desc);
+create index if not exists fonciarch_files_title_idx on public.fonciarch_files(title_id);
+create index if not exists fonciarch_files_import_idx on public.fonciarch_files(import_operation_id);
+alter table public.fonciarch_files enable row level security;
+revoke all on public.fonciarch_files from anon,authenticated;
+grant select,insert on public.fonciarch_files to service_role;
+grant usage on schema storage to service_role;
+grant select on storage.objects to service_role;
+
+create or replace function public.fonciarch_register_file(p_file jsonb) returns jsonb language plpgsql security invoker set search_path='' as $$
+declare prior public.fonciarch_files; saved public.fonciarch_files; file_id uuid;
+begin
+ file_id:=(p_file->>'id')::uuid;
+ if file_id is null then raise exception 'INVALID: Identifiant du fichier obligatoire.'; end if;
+ perform pg_advisory_xact_lock(hashtextextended('file:'||file_id::text,0));
+ select * into prior from public.fonciarch_files where id=file_id;
+ if found then
+  if prior.sha256 is distinct from p_file->>'sha256' or prior.bucket is distinct from p_file->>'bucket' or prior.kind is distinct from p_file->>'kind' or prior.original_name is distinct from p_file->>'original_name' or prior.size_bytes is distinct from (p_file->>'size_bytes')::bigint or prior.title_id is distinct from (p_file->>'title_id')::uuid or prior.import_operation_id is distinct from (p_file->>'import_operation_id')::uuid then raise exception 'CONFLICT: Ce fichier existe avec un autre contenu.'; end if;
+  return to_jsonb(prior);
+ end if;
+ if (p_file->>'object_path') !~ ('^'||file_id::text||'/file\.(csv|xls|xlsx|pdf|jpg|jpeg|png)$') then raise exception 'INVALID: Emplacement du fichier invalide.'; end if;
+ if not exists(select 1 from storage.objects where bucket_id=p_file->>'bucket' and name=p_file->>'object_path') then raise exception 'INVALID: Le transfert vers Storage doit être terminé avant son enregistrement.'; end if;
+ insert into public.fonciarch_files(id,kind,bucket,object_path,original_name,mime_type,size_bytes,sha256,title_id,import_operation_id)
+ values(file_id,p_file->>'kind',p_file->>'bucket',p_file->>'object_path',p_file->>'original_name',p_file->>'mime_type',(p_file->>'size_bytes')::bigint,p_file->>'sha256',(p_file->>'title_id')::uuid,(p_file->>'import_operation_id')::uuid)
+ returning * into saved;
+ insert into public.fonciarch_activities(actor,actor_id,action,item,before_value,after_value)
+ values('Accès sans authentification','direct-access','Ajout d’un fichier',saved.original_name,null,to_jsonb(saved));
+ return to_jsonb(saved);
+end;
+$$;
+revoke execute on function public.fonciarch_register_file(jsonb) from public,anon,authenticated;
+grant execute on function public.fonciarch_register_file(jsonb) to service_role;
+-- La clé serveur utilise service_role. Aucune clé secrète ne doit être envoyée au navigateur.
+notify pgrst,'reload schema';
+commit;
+
+-- Cadastre enregistré par titre. Les boxes restent les emplacements physiques du registre du service.
+begin;
+alter table public.fonciarch_titles add column if not exists cadastre text;
+update public.fonciarch_titles set cadastre=coalesce((select nullif(cadastre,'') from public.fonciarch_settings where singleton),'Mfoundi A') where cadastre is null or cadastre='';
+alter table public.fonciarch_titles alter column cadastre set not null;
+alter table public.fonciarch_titles alter column cadastre set default 'Mfoundi A';
+alter table public.fonciarch_titles drop constraint if exists fonciarch_titles_number_category_key;
+do $$ begin
+ if not exists(select 1 from pg_constraint where conrelid='public.fonciarch_titles'::regclass and conname='fonciarch_titles_number_category_cadastre_key') then
+  alter table public.fonciarch_titles add constraint fonciarch_titles_number_category_cadastre_key unique(number,category,cadastre);
+ end if;
+end $$;
+create index if not exists fonciarch_titles_cadastre_idx on public.fonciarch_titles(cadastre);
+create or replace function public.fonciarch_title_json(t public.fonciarch_titles) returns jsonb language sql stable set search_path = '' as $$
+ select jsonb_build_object('id',t.id,'number',t.number,'category',t.category,'cadastre',t.cadastre,'box',t.box,'status',t.status,'notes',t.notes,'date',t.created_at,'updatedAt',t.updated_at,'createdBy',t.created_by);
+$$;
+create or replace function public.fonciarch_workspace() returns jsonb language sql stable security invoker set search_path = '' as $$
+ select jsonb_build_object(
+  'capabilities',jsonb_build_object('titleCadastre',true),'backendId',(select id from public.fonciarch_identity where singleton), 'user',null,'users','[]'::jsonb,'directAccess',true,
+  'settings',coalesce((select jsonb_build_object('name',name,'cadastre',cadastre,'location',location) from public.fonciarch_settings where singleton),'{"name":"","cadastre":"","location":""}'::jsonb),
+  'titles',coalesce((select jsonb_agg(public.fonciarch_title_json(t) order by t.created_at desc) from public.fonciarch_titles t),'[]'::jsonb),
+  'boxes',coalesce((select jsonb_agg(jsonb_build_object('id',id,'number',number,'createdAt',created_at) order by length(number),number) from public.fonciarch_boxes),'[]'::jsonb),
+  'activities',coalesce((select jsonb_agg(jsonb_build_object('id',id,'date',occurred_at,'actor',actor,'actorId',actor_id,'action',action,'item',item,'before',before_value,'after',after_value) order by occurred_at desc) from public.fonciarch_activities),'[]'::jsonb)
+ );
+$$;
+create or replace function public.fonciarch_mutate(p_action text,p_input jsonb) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+ old_title public.fonciarch_titles; next_title public.fonciarch_titles; old_json jsonb; result jsonb; row_value jsonb;
+ n text; c text; b text; s text; cad text; action_label text; item_label text; new_id uuid;
+begin
+ if p_action='title' then
+  n:=regexp_replace(trim(coalesce(p_input->>'number','')),'[[:space:]-]','','g'); c:=upper(coalesce(p_input->>'category','')); b:=p_input->>'box';
+  if n !~ '^[0-9]+$' or length(n)>50 or c not in ('A','B','C') then raise exception 'INVALID: Numéro ou catégorie invalide.'; end if;
+  if not exists(select 1 from public.fonciarch_boxes where number=b) then raise exception 'INVALID: Le box de rangement n’existe pas.'; end if;
+  if p_input ? 'id' then
+   select * into old_title from public.fonciarch_titles where id=(p_input->>'id')::uuid for update;
+   if not found then raise exception 'CONFLICT: Titre introuvable sur le serveur.'; end if;
+   if old_title.updated_at is distinct from (p_input->>'updatedAt')::timestamptz then raise exception 'CONFLICT: Ce titre a été modifié sur un autre appareil.'; end if;
+   if old_title.box<>b then raise exception 'INVALID: Utilisez Déplacer pour changer le box avec un motif.'; end if;
+   old_json:=public.fonciarch_title_json(old_title);
+  end if;
+  cad:=coalesce(nullif(trim(p_input->>'cadastre'),''),old_title.cadastre,(select nullif(cadastre,'') from public.fonciarch_settings where singleton),'Mfoundi A');
+  if length(cad)>200 then raise exception 'INVALID: Cadastre invalide.'; end if;
+  s:=coalesce(nullif(p_input->>'status',''),old_title.status,'Disponible'); new_id:=coalesce(old_title.id,(p_input->>'clientId')::uuid,gen_random_uuid());
+  if exists(select 1 from public.fonciarch_titles where number=n and category=c and cadastre=cad and id<>new_id) then raise exception 'CONFLICT: Ce numéro et cette catégorie existent déjà dans ce cadastre.'; end if;
+  if old_title.id is null then
+   insert into public.fonciarch_titles(id,number,category,cadastre,box,status,notes) values(new_id,n,c,cad,b,s,coalesce(p_input->>'notes','')) returning * into next_title;
+   action_label:='Ajout du titre';
+  else
+   update public.fonciarch_titles set number=n,category=c,cadastre=cad,status=s,notes=coalesce(p_input->>'notes',''),updated_at=greatest(clock_timestamp(),old_title.updated_at+interval '1 microsecond') where id=new_id returning * into next_title;
+   action_label:='Modification du titre';
+  end if;
+  result:=public.fonciarch_title_json(next_title); item_label:=n||' '||c;
+ elsif p_action='box' then
+  n:=regexp_replace(trim(coalesce(p_input->>'number','')),'^0+(?=[0-9])','');
+  if n !~ '^[0-9]+$' or n ~ '^0+$' or length(n)>30 then raise exception 'INVALID: Numéro du box invalide.'; end if;
+  if exists(select 1 from public.fonciarch_boxes where number=n) then
+   if p_input->>'reuseExisting'='true' then select jsonb_build_object('id',id,'number',number,'createdAt',created_at) into result from public.fonciarch_boxes where number=n; return result; end if;
+   raise exception 'CONFLICT: Ce box existe déjà.';
+  end if;
+  insert into public.fonciarch_boxes(id,number) values(coalesce((p_input->>'clientId')::uuid,gen_random_uuid()),n) returning jsonb_build_object('id',id,'number',number,'createdAt',created_at) into result;
+  action_label:='Création du box'; item_label:='Box '||n;
+ elsif p_action='move' then
+  select * into old_title from public.fonciarch_titles where id=(p_input->>'id')::uuid for update;
+  if not found then raise exception 'CONFLICT: Titre introuvable sur le serveur.'; end if;
+  if old_title.updated_at is distinct from (p_input->>'updatedAt')::timestamptz then raise exception 'CONFLICT: Ce titre a été modifié sur un autre appareil.'; end if;
+  b:=p_input->>'box';
+  if b=old_title.box or not exists(select 1 from public.fonciarch_boxes where number=b) then raise exception 'INVALID: Choisissez un autre box existant.'; end if;
+  if length(trim(coalesce(p_input->>'reason','')))=0 or length(p_input->>'reason')>2000 then raise exception 'INVALID: Le motif du déplacement est obligatoire et limité à 2000 caractères.'; end if;
+  old_json:=public.fonciarch_title_json(old_title);
+  update public.fonciarch_titles set box=b,updated_at=greatest(clock_timestamp(),old_title.updated_at+interval '1 microsecond') where id=old_title.id returning * into next_title;
+  result:=public.fonciarch_title_json(next_title); action_label:='Déplacement du titre'; item_label:=old_title.number||' '||old_title.category||' · '||(p_input->>'reason');
+ elsif p_action='settings' then
+  if length(trim(coalesce(p_input->>'name','')))=0 or length(trim(coalesce(p_input->>'cadastre','')))=0 or length(trim(coalesce(p_input->>'location','')))=0 or greatest(length(p_input->>'name'),length(p_input->>'cadastre'),length(p_input->>'location'))>200 then raise exception 'INVALID: Les informations du service sont obligatoires et limitées à 200 caractères.'; end if;
+  select jsonb_build_object('name',name,'cadastre',cadastre,'location',location) into old_json from public.fonciarch_settings where singleton;
+  insert into public.fonciarch_settings(singleton,name,cadastre,location) values(true,trim(p_input->>'name'),trim(p_input->>'cadastre'),trim(p_input->>'location')) on conflict(singleton) do update set name=excluded.name,cadastre=excluded.cadastre,location=excluded.location;
+  result:=p_input; action_label:='Modification du service'; item_label:=p_input->>'name';
+ elsif p_action='import' then
+  if jsonb_typeof(p_input->'rows') is distinct from 'array' then raise exception 'INVALID: Lignes d’import invalides.'; end if;
+  if jsonb_array_length(p_input->'rows') not between 1 and 5000 then raise exception 'INVALID: Import limité à 5000 lignes.'; end if;
+  result:='[]'::jsonb;
+  for row_value in select value from jsonb_array_elements(p_input->'rows') loop
+   result:=result||jsonb_build_array(public.fonciarch_mutate('title',row_value-'id'));
+  end loop;
+  action_label:='Import CSV'; item_label:=jsonb_array_length(p_input->'rows')::text||' titres';
+ else raise exception 'INVALID: Opération inconnue.';
+ end if;
+ insert into public.fonciarch_activities(actor,actor_id,action,item,before_value,after_value) values('Accès sans authentification','direct-access',action_label,item_label,old_json,result);
+ return result;
+end;
+$$;
+create or replace function public.fonciarch_restore(p_snapshot jsonb) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare row_value jsonb;
+begin
+ lock table public.fonciarch_titles,public.fonciarch_boxes,public.fonciarch_activities,public.fonciarch_operations,public.fonciarch_settings in exclusive mode;
+ if exists(select 1 from public.fonciarch_titles) or exists(select 1 from public.fonciarch_boxes) or exists(select 1 from public.fonciarch_operations) or exists(select 1 from public.fonciarch_activities) or exists(select 1 from public.fonciarch_settings) then raise exception 'INVALID: La restauration exige un registre cloud vide.'; end if;
+ if jsonb_typeof(p_snapshot->'titles') is distinct from 'array' or jsonb_typeof(p_snapshot->'boxes') is distinct from 'array' then raise exception 'INVALID: Copie du registre invalide.'; end if;
+ for row_value in select value from jsonb_array_elements(p_snapshot->'boxes') loop
+  insert into public.fonciarch_boxes(id,number,created_at) values((row_value->>'id')::uuid,row_value->>'number',(row_value->>'createdAt')::timestamptz);
+ end loop;
+ for row_value in select value from jsonb_array_elements(p_snapshot->'titles') loop
+  insert into public.fonciarch_titles(id,number,category,cadastre,box,status,notes,created_at,updated_at,created_by) values((row_value->>'id')::uuid,row_value->>'number',row_value->>'category',coalesce(nullif(row_value->>'cadastre',''),nullif(p_snapshot->'settings'->>'cadastre',''),'Mfoundi A'),row_value->>'box',row_value->>'status',coalesce(row_value->>'notes',''),(row_value->>'date')::timestamptz,(row_value->>'updatedAt')::timestamptz,row_value->>'createdBy');
+ end loop;
+ for row_value in select value from jsonb_array_elements(coalesce(p_snapshot->'activities','[]'::jsonb)) loop
+  insert into public.fonciarch_activities(id,occurred_at,actor,actor_id,action,item,before_value,after_value) values((row_value->>'id')::uuid,(row_value->>'date')::timestamptz,row_value->>'actor',row_value->>'actorId',row_value->>'action',row_value->>'item',row_value->'before',row_value->'after');
+ end loop;
+ if length(p_snapshot->'settings'->>'name')>0 then
+  insert into public.fonciarch_settings(singleton,name,cadastre,location) values(true,p_snapshot->'settings'->>'name',p_snapshot->'settings'->>'cadastre',p_snapshot->'settings'->>'location');
+ end if;
+ return jsonb_build_object('titles',jsonb_array_length(p_snapshot->'titles'),'boxes',jsonb_array_length(p_snapshot->'boxes'));
+end;
+$$;
+revoke execute on function public.fonciarch_restore(jsonb) from public,anon,authenticated;
+grant execute on function public.fonciarch_restore(jsonb) to service_role;
+
+
+notify pgrst,'reload schema';
+commit;
+
+-- Rétablit les droits du serveur sans ouvrir les données aux clés publiques.
+begin;
+revoke all on public.fonciarch_identity,public.fonciarch_settings,public.fonciarch_boxes,public.fonciarch_titles,public.fonciarch_activities,public.fonciarch_operations from anon,authenticated;
+grant all on public.fonciarch_identity,public.fonciarch_settings,public.fonciarch_boxes,public.fonciarch_titles,public.fonciarch_activities,public.fonciarch_operations to service_role;
+revoke execute on function public.fonciarch_title_json(public.fonciarch_titles),public.fonciarch_workspace(),public.fonciarch_mutate(text,jsonb),public.fonciarch_apply_operation(uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.fonciarch_title_json(public.fonciarch_titles),public.fonciarch_workspace(),public.fonciarch_mutate(text,jsonb),public.fonciarch_apply_operation(uuid,text,jsonb) to service_role;
+notify pgrst,'reload schema';
+commit;
+-- Vérification finale : titleCadastre et ecriture_serveur doivent valoir true.
+select public.fonciarch_workspace()->'capabilities' as synchronisation,
+ has_function_privilege('service_role','public.fonciarch_apply_operation(uuid,text,jsonb)','EXECUTE') as ecriture_serveur;
+
+
+-- Import atomique : crée automatiquement les boxes manquants du fichier.
+-- Aucun box déjà présent ni titre existant n’est modifié.
+begin;
+create or replace function public.fonciarch_mutate(p_action text,p_input jsonb) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+ old_title public.fonciarch_titles; next_title public.fonciarch_titles; old_json jsonb; result jsonb; row_value jsonb;
+ n text; c text; b text; s text; cad text; action_label text; item_label text; new_id uuid; created_boxes integer := 0; box_rows integer := 0;
+begin
+ if p_action='title' then
+  n:=regexp_replace(trim(coalesce(p_input->>'number','')),'[[:space:]-]','','g'); c:=upper(coalesce(p_input->>'category','')); b:=p_input->>'box';
+  if n !~ '^[0-9]+$' or length(n)>50 or c not in ('A','B','C') then raise exception 'INVALID: Numéro ou catégorie invalide.'; end if;
+  if not exists(select 1 from public.fonciarch_boxes where number=b) then raise exception 'INVALID: Le box de rangement n’existe pas.'; end if;
+  if p_input ? 'id' then
+   select * into old_title from public.fonciarch_titles where id=(p_input->>'id')::uuid for update;
+   if not found then raise exception 'CONFLICT: Titre introuvable sur le serveur.'; end if;
+   if old_title.updated_at is distinct from (p_input->>'updatedAt')::timestamptz then raise exception 'CONFLICT: Ce titre a été modifié sur un autre appareil.'; end if;
+   if old_title.box<>b then raise exception 'INVALID: Utilisez Déplacer pour changer le box avec un motif.'; end if;
+   old_json:=public.fonciarch_title_json(old_title);
+  end if;
+  cad:=coalesce(nullif(trim(p_input->>'cadastre'),''),old_title.cadastre,(select nullif(cadastre,'') from public.fonciarch_settings where singleton),'Mfoundi A');
+  if length(cad)>200 then raise exception 'INVALID: Cadastre invalide.'; end if;
+  s:=coalesce(nullif(p_input->>'status',''),old_title.status,'Disponible'); new_id:=coalesce(old_title.id,(p_input->>'clientId')::uuid,gen_random_uuid());
+  if exists(select 1 from public.fonciarch_titles where number=n and category=c and cadastre=cad and id<>new_id) then raise exception 'CONFLICT: Ce numéro et cette catégorie existent déjà dans ce cadastre.'; end if;
+  if old_title.id is null then
+   insert into public.fonciarch_titles(id,number,category,cadastre,box,status,notes) values(new_id,n,c,cad,b,s,coalesce(p_input->>'notes','')) returning * into next_title;
+   action_label:='Ajout du titre';
+  else
+   update public.fonciarch_titles set number=n,category=c,cadastre=cad,status=s,notes=coalesce(p_input->>'notes',''),updated_at=greatest(clock_timestamp(),old_title.updated_at+interval '1 microsecond') where id=new_id returning * into next_title;
+   action_label:='Modification du titre';
+  end if;
+  result:=public.fonciarch_title_json(next_title); item_label:=n||' '||c;
+ elsif p_action='box' then
+  n:=regexp_replace(trim(coalesce(p_input->>'number','')),'^0+(?=[0-9])','');
+  if n !~ '^[0-9]+$' or n ~ '^0+$' or length(n)>30 then raise exception 'INVALID: Numéro du box invalide.'; end if;
+  if exists(select 1 from public.fonciarch_boxes where number=n) then
+   if p_input->>'reuseExisting'='true' then select jsonb_build_object('id',id,'number',number,'createdAt',created_at) into result from public.fonciarch_boxes where number=n; return result; end if;
+   raise exception 'CONFLICT: Ce box existe déjà.';
+  end if;
+  insert into public.fonciarch_boxes(id,number) values(coalesce((p_input->>'clientId')::uuid,gen_random_uuid()),n) returning jsonb_build_object('id',id,'number',number,'createdAt',created_at) into result;
+  action_label:='Création du box'; item_label:='Box '||n;
+ elsif p_action='move' then
+  select * into old_title from public.fonciarch_titles where id=(p_input->>'id')::uuid for update;
+  if not found then raise exception 'CONFLICT: Titre introuvable sur le serveur.'; end if;
+  if old_title.updated_at is distinct from (p_input->>'updatedAt')::timestamptz then raise exception 'CONFLICT: Ce titre a été modifié sur un autre appareil.'; end if;
+  b:=p_input->>'box';
+  if b=old_title.box or not exists(select 1 from public.fonciarch_boxes where number=b) then raise exception 'INVALID: Choisissez un autre box existant.'; end if;
+  if length(trim(coalesce(p_input->>'reason','')))=0 or length(p_input->>'reason')>2000 then raise exception 'INVALID: Le motif du déplacement est obligatoire et limité à 2000 caractères.'; end if;
+  old_json:=public.fonciarch_title_json(old_title);
+  update public.fonciarch_titles set box=b,updated_at=greatest(clock_timestamp(),old_title.updated_at+interval '1 microsecond') where id=old_title.id returning * into next_title;
+  result:=public.fonciarch_title_json(next_title); action_label:='Déplacement du titre'; item_label:=old_title.number||' '||old_title.category||' · '||(p_input->>'reason');
+ elsif p_action='settings' then
+  if length(trim(coalesce(p_input->>'name','')))=0 or length(trim(coalesce(p_input->>'cadastre','')))=0 or length(trim(coalesce(p_input->>'location','')))=0 or greatest(length(p_input->>'name'),length(p_input->>'cadastre'),length(p_input->>'location'))>200 then raise exception 'INVALID: Les informations du service sont obligatoires et limitées à 200 caractères.'; end if;
+  select jsonb_build_object('name',name,'cadastre',cadastre,'location',location) into old_json from public.fonciarch_settings where singleton;
+  insert into public.fonciarch_settings(singleton,name,cadastre,location) values(true,trim(p_input->>'name'),trim(p_input->>'cadastre'),trim(p_input->>'location')) on conflict(singleton) do update set name=excluded.name,cadastre=excluded.cadastre,location=excluded.location;
+  result:=p_input; action_label:='Modification du service'; item_label:=p_input->>'name';
+ elsif p_action='import' then
+  if jsonb_typeof(p_input->'rows') is distinct from 'array' then raise exception 'INVALID: Lignes d’import invalides.'; end if;
+  if jsonb_array_length(p_input->'rows') not between 1 and 5000 then raise exception 'INVALID: Import limité à 5000 lignes.'; end if;
+  -- Crée en une seule transaction tous les emplacements utilisés dans l'import.
+  for b in
+   select distinct regexp_replace(trim(coalesce(value->>'box','')),'^0+(?=[0-9])','')
+   from jsonb_array_elements(p_input->'rows') as imported(value)
+  loop
+   if b !~ '^[0-9]+$' or b ~ '^0+$' or length(b)>30 then raise exception 'INVALID: Un numéro de box dans le fichier est invalide.'; end if;
+   insert into public.fonciarch_boxes(number) values(b) on conflict(number) do nothing;
+   get diagnostics box_rows = row_count;
+   created_boxes := created_boxes + box_rows;
+  end loop;
+  result:='[]'::jsonb;
+  for row_value in select value from jsonb_array_elements(p_input->'rows') loop
+   b:=regexp_replace(trim(coalesce(row_value->>'box','')),'^0+(?=[0-9])','');
+   result:=result||jsonb_build_array(public.fonciarch_mutate('title',(row_value-'id')||jsonb_build_object('box',b)));
+  end loop;
+  old_json:=jsonb_build_object('boxesCreated',created_boxes);
+  action_label:='Importation des titres'; item_label:=jsonb_array_length(p_input->'rows')::text||' titres · '||created_boxes::text||' nouveaux boxes';
+ else raise exception 'INVALID: Opération inconnue.';
+ end if;
+ insert into public.fonciarch_activities(actor,actor_id,action,item,before_value,after_value) values('Accès sans authentification','direct-access',action_label,item_label,old_json,result);
+ return result;
+end;
+$$;
+notify pgrst,'reload schema';
+commit;
+
+
+-- Import atomique : crée automatiquement les boxes manquants du fichier.
+-- Aucun box déjà présent ni titre existant n’est modifié.
+begin;
+create or replace function public.fonciarch_mutate(p_action text,p_input jsonb) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+ old_title public.fonciarch_titles; next_title public.fonciarch_titles; old_json jsonb; result jsonb; row_value jsonb; row_result jsonb;
+ n text; c text; b text; s text; cad text; action_label text; item_label text; new_id uuid; created_boxes integer := 0; box_rows integer := 0;
+begin
+ if p_action='title' then
+  n:=regexp_replace(trim(coalesce(p_input->>'number','')),'[[:space:]-]','','g'); c:=upper(coalesce(p_input->>'category','')); b:=p_input->>'box';
+  if n !~ '^[0-9]+$' or length(n)>50 or c not in ('A','B','C') then raise exception 'INVALID: Numéro ou catégorie invalide.'; end if;
+  if not exists(select 1 from public.fonciarch_boxes where number=b) then raise exception 'INVALID: Le box de rangement n’existe pas.'; end if;
+  if p_input ? 'id' then
+   select * into old_title from public.fonciarch_titles where id=(p_input->>'id')::uuid for update;
+   if not found then raise exception 'CONFLICT: Titre introuvable sur le serveur.'; end if;
+   if old_title.updated_at is distinct from (p_input->>'updatedAt')::timestamptz then raise exception 'CONFLICT: Ce titre a été modifié sur un autre appareil.'; end if;
+   if old_title.box<>b then raise exception 'INVALID: Utilisez Déplacer pour changer le box avec un motif.'; end if;
+   old_json:=public.fonciarch_title_json(old_title);
+  end if;
+  cad:=coalesce(nullif(trim(p_input->>'cadastre'),''),old_title.cadastre,(select nullif(cadastre,'') from public.fonciarch_settings where singleton),'Mfoundi A');
+  if length(cad)>200 then raise exception 'INVALID: Cadastre invalide.'; end if;
+  s:=coalesce(nullif(p_input->>'status',''),old_title.status,'Disponible'); new_id:=coalesce(old_title.id,(p_input->>'clientId')::uuid,gen_random_uuid());
+  if exists(select 1 from public.fonciarch_titles where number=n and category=c and cadastre=cad and id<>new_id) then raise exception 'CONFLICT: Ce numéro et cette catégorie existent déjà dans ce cadastre.'; end if;
+  if old_title.id is null then
+   insert into public.fonciarch_titles(id,number,category,cadastre,box,status,notes) values(new_id,n,c,cad,b,s,coalesce(p_input->>'notes','')) returning * into next_title;
+   action_label:='Ajout du titre';
+  else
+   update public.fonciarch_titles set number=n,category=c,cadastre=cad,status=s,notes=coalesce(p_input->>'notes',''),updated_at=greatest(clock_timestamp(),old_title.updated_at+interval '1 microsecond') where id=new_id returning * into next_title;
+   action_label:='Modification du titre';
+  end if;
+  result:=public.fonciarch_title_json(next_title); item_label:=n||' '||c;
+ elsif p_action='box' then
+  n:=regexp_replace(trim(coalesce(p_input->>'number','')),'^0+(?=[0-9])','');
+  if n !~ '^[0-9]+$' or n ~ '^0+$' or length(n)>30 then raise exception 'INVALID: Numéro du box invalide.'; end if;
+  if exists(select 1 from public.fonciarch_boxes where number=n) then
+   if p_input->>'reuseExisting'='true' then select jsonb_build_object('id',id,'number',number,'createdAt',created_at) into result from public.fonciarch_boxes where number=n; return result; end if;
+   raise exception 'CONFLICT: Ce box existe déjà.';
+  end if;
+  insert into public.fonciarch_boxes(id,number) values(coalesce((p_input->>'clientId')::uuid,gen_random_uuid()),n) returning jsonb_build_object('id',id,'number',number,'createdAt',created_at) into result;
+  action_label:='Création du box'; item_label:='Box '||n;
+ elsif p_action='move' then
+  select * into old_title from public.fonciarch_titles where id=(p_input->>'id')::uuid for update;
+  if not found then raise exception 'CONFLICT: Titre introuvable sur le serveur.'; end if;
+  if old_title.updated_at is distinct from (p_input->>'updatedAt')::timestamptz then raise exception 'CONFLICT: Ce titre a été modifié sur un autre appareil.'; end if;
+  b:=p_input->>'box';
+  if b=old_title.box or not exists(select 1 from public.fonciarch_boxes where number=b) then raise exception 'INVALID: Choisissez un autre box existant.'; end if;
+  if length(trim(coalesce(p_input->>'reason','')))=0 or length(p_input->>'reason')>2000 then raise exception 'INVALID: Le motif du déplacement est obligatoire et limité à 2000 caractères.'; end if;
+  old_json:=public.fonciarch_title_json(old_title);
+  update public.fonciarch_titles set box=b,updated_at=greatest(clock_timestamp(),old_title.updated_at+interval '1 microsecond') where id=old_title.id returning * into next_title;
+  result:=public.fonciarch_title_json(next_title); action_label:='Déplacement du titre'; item_label:=old_title.number||' '||old_title.category||' · '||(p_input->>'reason');
+ elsif p_action='settings' then
+  if length(trim(coalesce(p_input->>'name','')))=0 or length(trim(coalesce(p_input->>'cadastre','')))=0 or length(trim(coalesce(p_input->>'location','')))=0 or greatest(length(p_input->>'name'),length(p_input->>'cadastre'),length(p_input->>'location'))>200 then raise exception 'INVALID: Les informations du service sont obligatoires et limitées à 200 caractères.'; end if;
+  select jsonb_build_object('name',name,'cadastre',cadastre,'location',location) into old_json from public.fonciarch_settings where singleton;
+  insert into public.fonciarch_settings(singleton,name,cadastre,location) values(true,trim(p_input->>'name'),trim(p_input->>'cadastre'),trim(p_input->>'location')) on conflict(singleton) do update set name=excluded.name,cadastre=excluded.cadastre,location=excluded.location;
+  result:=p_input; action_label:='Modification du service'; item_label:=p_input->>'name';
+ elsif p_action='import' then
+  if jsonb_typeof(p_input->'rows') is distinct from 'array' then raise exception 'INVALID: Lignes d’import invalides.'; end if;
+  if jsonb_array_length(p_input->'rows') not between 1 and 5000 then raise exception 'INVALID: Import limité à 5000 lignes.'; end if;
+  -- Crée en une seule transaction tous les emplacements utilisés dans l'import.
+  for b in
+   select distinct regexp_replace(trim(coalesce(value->>'box','')),'^0+(?=[0-9])','')
+   from jsonb_array_elements(p_input->'rows') as imported(value)
+  loop
+   if b !~ '^[0-9]+$' or b ~ '^0+$' or length(b)>30 then raise exception 'INVALID: Un numéro de box dans le fichier est invalide.'; end if;
+   insert into public.fonciarch_boxes(number) values(b) on conflict(number) do nothing;
+   get diagnostics box_rows = row_count;
+   created_boxes := created_boxes + box_rows;
+  end loop;
+  perform set_config('fonciarch.batch_import','true',true);
+  result:='[]'::jsonb;
+  for row_value in select value from jsonb_array_elements(p_input->'rows') loop
+   b:=regexp_replace(trim(coalesce(row_value->>'box','')),'^0+(?=[0-9])','');
+   row_result:=public.fonciarch_mutate('title',(row_value-'id')||jsonb_build_object('box',b));
+   result:=result||jsonb_build_array(jsonb_build_object('id',row_result->>'id','updatedAt',row_result->>'updatedAt')); 
+  end loop;
+  perform set_config('fonciarch.batch_import','false',true);
+  old_json:=jsonb_build_object('boxesCreated',created_boxes);
+  action_label:='Importation des titres'; item_label:=jsonb_array_length(p_input->'rows')::text||' titres · '||created_boxes::text||' nouveaux boxes';
+ else raise exception 'INVALID: Opération inconnue.';
+ end if;
+ if current_setting('fonciarch.batch_import',true)='true' then return result; end if;
+ insert into public.fonciarch_activities(actor,actor_id,action,item,before_value,after_value) values('Accès sans authentification','direct-access',action_label,item_label,old_json,result);
+ return result;
+end;
+$$;
+notify pgrst,'reload schema';
+commit;

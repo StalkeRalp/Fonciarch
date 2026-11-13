@@ -38,11 +38,11 @@ with zipfile.ZipFile(b,'w',zipfile.ZIP_DEFLATED) as z:
  for k,v in json.load(open(sys.argv[1])).items(): z.writestr(k,v)
 open(sys.argv[2],'wb').write(b.getvalue())`,join(dir,'files.json'),join(dir,'fixture.xlsx')],{timeout:10000});assert.equal(p.status,0);return buffer(readFileSync(join(dir,'fixture.xlsx')));
 }
-const header=row(1,['Numéro','Catégorie','Box','Cadastre','Statut']);
+const header=row(1,['Numéro','Conservation','Box','Cadastre','Statut']);
 try {
 await test('Modèles Excel réels : cinq cellules, zéros initiaux conservés',async()=>{
  const example=await readXlsx(buffer(readFileSync('public/modeles/titres-exemple.xlsx')));
- assert.deepEqual(example.records[0],['Numéro','Catégorie','Box','Cadastre','Statut']);
+ assert.deepEqual(example.records[0],['Numéro','Conservation','Box','Cadastre','Statut']);
  assert.deepEqual(example.records[1],['00125','A','15','Mfoundi A','Disponible']);
  assert.equal(example.records.length,4);
  const blank=await readXlsx(buffer(readFileSync('public/modeles/titres-vierge.xlsx')));assert.equal(blank.records.length,1);

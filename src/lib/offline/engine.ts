@@ -45,12 +45,15 @@ export class OfflineEngine {
         }
         delete input.createBox;
       }
-      const checkTitle = (p: Record<string, unknown>, seen: Title[]) => {
+      const checkTitle = (p: Record<string, unknown>, seen: Title[] | Set<string>, allowCreateBox = false) => {
         p.number = required(p.number, "Numéro", 50).replace(/[\s-]/g, ""); p.category = String(p.category).toUpperCase();
         p.cadastre = required(p.cadastre || view.settings.cadastre || "Mfoundi A", "Cadastre");
-        if (!/^\d+$/.test(String(p.number)) || !["A", "B", "C"].includes(String(p.category))) throw new Error("Vérifiez le numéro et la catégorie du titre.");
-        if (!view.boxes.some(b => b.number === p.box)) throw new Error("Créez d’abord le box de rangement.");
-        if (seen.some(t => t.number === p.number && t.category === p.category && (t.cadastre || view.settings.cadastre || "Mfoundi A") === p.cadastre && t.id !== p.id)) throw new Error("Ce numéro et cette catégorie existent déjà.");
+        if (!/^\d+$/.test(String(p.number)) || !["A", "B", "C"].includes(String(p.category))) throw new Error("Vérifiez le numéro et la conservation du titre.");
+        p.box = required(p.box, "Numéro du box", 30).replace(/^0+(?=\d)/, "");
+        if (!/^\d+$/.test(String(p.box)) || /^0+$/.test(String(p.box))) throw new Error("Le numéro du box doit être un entier positif.");
+        if (!allowCreateBox && !view.boxes.some(b => b.number === p.box)) throw new Error("Créez d’abord le box de rangement.");
+        const duplicateKey = `${p.number}:${p.category}:${p.cadastre}`;
+        if (seen instanceof Set ? seen.has(duplicateKey) : seen.some(t => t.number === p.number && t.category === p.category && (t.cadastre || view.settings.cadastre || "Mfoundi A") === p.cadastre && t.id !== p.id)) throw new Error("Ce numéro et cette conservation existent déjà.");
         if (p.id) { const old = view.titles.find(t => t.id === p.id); if (!old) throw new Error("Titre introuvable sur cet appareil."); if (old.box !== p.box) throw new Error("Utilisez Déplacer pour changer le box."); }
         else p.clientId = crypto.randomUUID();
         p.status ||= "Disponible"; if (!statuses.includes(p.status as typeof statuses[number])) throw new Error("Statut invalide.");
@@ -60,7 +63,7 @@ export class OfflineEngine {
       else if (action === "box") { input.number = required(input.number, "Numéro du box", 30).replace(/^0+(?=\d)/, ""); if (!/^\d+$/.test(String(input.number)) || /^0+$/.test(String(input.number))) throw new Error("Numéro du box invalide."); if (view.boxes.some(b => b.number === input.number)) throw new Error("Ce box existe déjà."); input.clientId = crypto.randomUUID(); }
       else if (action === "move") { entityId = String(input.id); const old = view.titles.find(t => t.id === entityId); if (!old || old.box === input.box || !view.boxes.some(b => b.number === input.box)) throw new Error("Choisissez un autre box existant."); input.reason = required(input.reason, "Motif", 2000); }
       else if (action === "settings") { for (const key of ["name", "cadastre", "location"]) input[key] = required(input[key], "Informations du service"); }
-      else if (action === "import") { if (!Array.isArray(input.rows) || !input.rows.length || input.rows.length > 5000) throw new Error("Import limité à 5 000 lignes."); const seen = [...view.titles]; for (const row of input.rows as Record<string, unknown>[]) { delete row.id; checkTitle(row, seen); seen.push({ id: String(row.clientId), number: String(row.number), category: String(row.category), cadastre: String(row.cadastre) } as Title); } }
+      else if (action === "import") { if (!Array.isArray(input.rows) || !input.rows.length || input.rows.length > 5000) throw new Error("Import limité à 5 000 lignes."); const seen = new Set(view.titles.map(t => `${t.number}:${t.category}:${t.cadastre || view.settings.cadastre || "Mfoundi A"}`)); const knownBoxes = new Set(view.boxes.map(b => b.number)); for (const row of input.rows as Record<string, unknown>[]) { delete row.id; checkTitle(row, seen, true); if (!knownBoxes.has(String(row.box))) { knownBoxes.add(String(row.box)); view.boxes.push({ id: `import-box-${row.box}`, number: String(row.box), createdAt: now }); } seen.add(`${row.number}:${row.category}:${row.cadastre}`); } }
       else if (action === "file") {
         if (files.length !== 1) throw new Error("Sélectionnez un fichier.");
         if (files[0].titleId && !view.titles.some(t => t.id === files[0].titleId)) throw new Error("Titre associé introuvable sur cet appareil.");

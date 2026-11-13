@@ -13,6 +13,7 @@ async function probe(url, key) {
   if (response.ok) { console.log("RPC de lecture accessible."); if (Array.isArray(data.titles)) {
     console.log(`Registre distant : ${data.titles.length} titre(s), ${data.boxes?.length || 0} box(es).`);
     console.log(`Cadastre par titre : ${data.capabilities?.titleCadastre ? "prêt" : "migration Cadastres requise"}.`);
+    if (!data.capabilities?.titleCadastre) { console.log("Synchronisation des titres bloquée : exécutez supabase/MISE_A_JOUR_SYNCHRONISATION.sql dans le SQL Editor, puis réessayez."); process.exitCode=1; }
     if (process.argv.includes("--storage")) {
       const files=await fetch(`${url}/rest/v1/fonciarch_files?select=id&limit=1`,{headers:{apikey:key},signal:AbortSignal.timeout(10000)});
       console.log(`Registre des fichiers : ${files.ok ? "accessible" : "migration Storage ou droits à vérifier"}.`);

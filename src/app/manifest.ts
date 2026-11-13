@@ -2,12 +2,12 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    id: "/",
+    id: "/application",
     name: "FONCIARCH — Archives foncières",
     short_name: "FONCIARCH",
     description: "Gestion et localisation des archives foncières.",
     lang: "fr",
-    start_url: "/",
+    start_url: "/application",
     scope: "/",
     display: "standalone",
     background_color: "#f6f8fa",

@@ -37,10 +37,12 @@ Les tests simulés ne remplacent pas un essai avec le projet Supabase réel ni l
 
 ## Périmètre
 
-Un service, plusieurs cadastres enregistrés par titre ; catégories A/B/C ; série indicative à confirmer. Le registre est chargé en entier : pagination et synchronisation incrémentale restent nécessaires pour les volumes importants. L’import Excel .xlsx utilise la feuille Titres et les colonnes du modèle téléchargeable. Les anciens .xls doivent être réenregistrés en .xlsx. La gestion des prêts et les sauvegardes automatiques restent à développer.
+Un service, plusieurs cadastres enregistrés par titre ; conservations A/B/C ; série définie par le premier chiffre du titre (0 à 9). Le registre est chargé en entier : pagination et synchronisation incrémentale restent nécessaires pour les volumes importants. L’import Excel .xlsx utilise la feuille Titres et les colonnes du modèle téléchargeable. Les anciens .xls doivent être réenregistrés en .xlsx. La gestion des prêts et les sauvegardes automatiques restent à développer.
 
 Avant une exposition sur Internet, rétablir les sessions et les permissions vérifiées côté serveur. Le stockage local métier n’est pas chiffré par l’application ; protéger les appareils et les copies exportées.
 
 ## Stockage des fichiers
 
 Voir [le guide Storage](docs/STOCKAGE_SUPABASE.md). Les trois buckets privés conservent les sources d’import, les documents associés aux titres et les exports. Les fichiers en attente sont conservés dans IndexedDB puis transmis à Supabase. `npm run supabase:check -- --storage` vérifie le registre et les buckets depuis un réseau autorisant l’accès au projet.
+
+La synchronisation automatique est limitée à un passage toutes les 5 minutes (application visible et réseau disponible), y compris après une erreur. Les saisies ne déclenchent pas chacune une requête. Le bouton « Synchroniser maintenant » ignore ce délai ; une lecture initiale reste possible à l’ouverture si le délai est écoulé. Le délai est partagé entre onglets lorsque localStorage est disponible et les envois sont coordonnés par Web Locks.
