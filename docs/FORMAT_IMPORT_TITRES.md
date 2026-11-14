@@ -8,7 +8,7 @@ Utiliser une feuille nommée **Titres** (obligatoire avec plusieurs feuilles). M
 |---|---|---|
 | Numéro | Chiffres uniquement ; conserver le format texte pour les zéros initiaux | Obligatoire |
 | Conservation | A, B ou C | Obligatoire |
-| Box | Numéro seul, par exemple 15 ; emplacement à créer avant l’import | Obligatoire |
+| Box | Numéro seul, par exemple 15 ; créé automatiquement s’il manque | Obligatoire |
 | Cadastre | Nom exact, par exemple Mfoundi A ; garder une orthographe identique | Conseillé ; cadastre du service si absent ou vide |
 | Statut | Disponible, Sorti, Introuvable ou Archivé | Facultatif ; Disponible par défaut |
 | Série | Facultative ; calculée depuis le premier chiffre du numéro du titre | Ignorée lors de l’import |
@@ -21,7 +21,7 @@ Exemple fictif à remplacer, chaque élément étant dans sa cellule :
 | 00126 | B | 15 | Mfoundi A | Archivé |
 | 00125 | A | 16 | Mfoundi B | Disponible |
 
-Créer les boxes 15 et 16 avant cet exemple. Une ligne représente un titre. Ne pas ajouter de titre de document avant les en-têtes, de cellules fusionnées, de sous-totaux ou de séparateurs supplémentaires. Chaque colonne doit avoir un nom unique et chaque ligne le même nombre de colonnes. Les colonnes supplémentaires, dont les observations, ne sont pas importées actuellement.
+Les boxes 15 et 16 seront créés automatiquement s’ils n’existent pas. Une ligne représente un titre. Ne pas ajouter de titre de document avant les en-têtes, de cellules fusionnées, de sous-totaux ou de séparateurs supplémentaires. Chaque colonne doit avoir un nom unique et chaque ligne le même nombre de colonnes. Les colonnes supplémentaires, dont les observations, ne sont pas importées actuellement.
 
 La combinaison **Numéro + Conservation + Cadastre** doit être unique dans le fichier et dans le registre. Changer le box ne permet pas de réimporter un titre existant : utiliser le déplacement de titre. Les zéros initiaux des numéros sont conservés ; ne pas alterner 00125 et 125 pour désigner le même titre. Les noms de cadastre doivent garder la même casse, les mêmes accents et espaces pour éviter des cadastres distincts par erreur.
 

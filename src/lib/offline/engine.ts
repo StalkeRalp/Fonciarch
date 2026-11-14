@@ -54,12 +54,15 @@ export class OfflineEngine {
         if (!allowCreateBox && !view.boxes.some(b => b.number === p.box)) throw new Error("Créez d’abord le box de rangement.");
         const duplicateKey = `${p.number}:${p.category}:${p.cadastre}`;
         if (seen instanceof Set ? seen.has(duplicateKey) : seen.some(t => t.number === p.number && t.category === p.category && (t.cadastre || view.settings.cadastre || "Mfoundi A") === p.cadastre && t.id !== p.id)) throw new Error("Ce numéro et cette conservation existent déjà.");
-        if (p.id) { const old = view.titles.find(t => t.id === p.id); if (!old) throw new Error("Titre introuvable sur cet appareil."); if (old.box !== p.box) throw new Error("Utilisez Déplacer pour changer le box."); }
+        if (p.id) { const old = view.titles.find(t => t.id === p.id); if (!old) throw new Error("Titre introuvable sur cet appareil."); if (old.box !== p.box && !view.boxes.some(b => b.number === p.box)) throw new Error("Créez d’abord le box de rangement."); }
         else p.clientId = crypto.randomUUID();
         p.status ||= "Disponible"; if (!statuses.includes(p.status as typeof statuses[number])) throw new Error("Statut invalide.");
         p.notes = typeof p.notes === "string" ? p.notes.slice(0, 10000) : "";
       };
       if (action === "title") { checkTitle(input, view.titles); entityId = String(input.id || input.clientId); }
+      else if (action === "title-delete") { entityId = String(input.id); const old = view.titles.find(t => t.id === entityId); if (!old || old.updatedAt !== input.updatedAt) throw new Error("Titre introuvable ou modifié depuis le dernier chargement."); }
+      else if (action === "box-edit") { input.oldNumber = required(input.oldNumber, "Box actuel", 30); input.number = required(input.number, "Numéro du box", 30).replace(/^0+(?=\d)/, ""); if (!/^\d+$/.test(String(input.number)) || /^0+$/.test(String(input.number)) || view.boxes.some(b => b.number === input.number && b.number !== input.oldNumber)) throw new Error("Numéro invalide ou déjà utilisé."); entityId = String(input.oldNumber); }
+      else if (action === "box-delete") { input.number = required(input.number, "Numéro du box", 30); if (!view.boxes.some(b => b.number === input.number)) throw new Error("Box introuvable."); if (view.titles.some(t => t.box === input.number)) throw new Error("Déplacez d’abord les titres de ce box."); entityId = String(input.number); }
       else if (action === "box") { input.number = required(input.number, "Numéro du box", 30).replace(/^0+(?=\d)/, ""); if (!/^\d+$/.test(String(input.number)) || /^0+$/.test(String(input.number))) throw new Error("Numéro du box invalide."); if (view.boxes.some(b => b.number === input.number)) throw new Error("Ce box existe déjà."); input.clientId = crypto.randomUUID(); }
       else if (action === "move") { entityId = String(input.id); const old = view.titles.find(t => t.id === entityId); if (!old || old.box === input.box || !view.boxes.some(b => b.number === input.box)) throw new Error("Choisissez un autre box existant."); input.reason = required(input.reason, "Motif", 2000); }
       else if (action === "settings") { for (const key of ["name", "cadastre", "location"]) input[key] = required(input[key], "Informations du service"); }

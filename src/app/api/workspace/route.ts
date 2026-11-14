@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const raw = await request.text(); if (raw.length > 5_000_000) throw new AppError("Requête trop volumineuse.", 413);
   let input; try { input = JSON.parse(raw); } catch { throw new AppError("Requête JSON invalide."); } if (!input || typeof input !== "object") throw new AppError("Requête invalide.");
   const { action, operationId, ...data } = input;
-  if (!["title", "box", "move", "import", "settings"].includes(action)) throw new AppError("La gestion des comptes est suspendue pendant l’accès sans authentification.", 403);
+  if (!["title", "title-delete", "box", "box-edit", "box-delete", "move", "import", "settings"].includes(action)) throw new AppError("La gestion des comptes est suspendue pendant l’accès sans authentification.", 403);
   operationAction = action;
   if (operationId !== undefined && (typeof operationId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(operationId))) throw new AppError("Identifiant d’opération invalide.");
   return response(await applyOperation(operationId || randomUUID(), String(action), data));

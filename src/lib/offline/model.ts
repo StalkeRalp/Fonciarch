@@ -12,6 +12,9 @@ export function project(state: LocalState): Workspace {
   for (const op of state.operations) {
     const p = op.input;
     if (op.action === "box" && !boxNumbers.has(String(p.number))) { workspace.boxes.push({ id: String(p.clientId), number: String(p.number), createdAt: op.createdAt }); boxNumbers.add(String(p.number)); }
+    if (op.action === "box-edit") { workspace.boxes = workspace.boxes.map(b => b.number === p.oldNumber ? { ...b, number: String(p.number) } : b); for (const [id,t] of titlesById) if (t.box === p.oldNumber) titlesById.set(id,{...t,box:String(p.number),updatedAt:op.createdAt}); }
+    if (op.action === "box-delete") workspace.boxes = workspace.boxes.filter(b => b.number !== p.number);
+    if (op.action === "title-delete") titlesById.delete(String(p.id));
     if (op.action === "settings") workspace.settings = { name: String(p.name), cadastre: String(p.cadastre), location: String(p.location) };
     const applyTitle = (row: Record<string, unknown>) => {
       const id = String(row.id || row.clientId); const old = titlesById.get(id);

@@ -1,11 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, Download, MonitorSmartphone, RefreshCw, WifiOff } from "lucide-react";
+import { CheckCircle2, Download, MonitorSmartphone, RefreshCw, WifiOff, X, LoaderCircle, Smartphone } from "lucide-react";
 
 type InstallPrompt = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 type WorkerState = "checking" | "development" | "unsupported" | "ready" | "error";
-type PwaContext = { installed: boolean; canInstall: boolean; installing: boolean; workerState: WorkerState; updateReady: boolean; updating: boolean; applyUpdate(): void; install(): Promise<void> };
+type PwaContext = { installed: boolean; canInstall: boolean; installing: boolean; workerState: WorkerState; updateReady: boolean; updating: boolean; applyUpdate(): void; install(): Promise<"accepted" | "dismissed" | "unavailable"> };
 const PwaContext = createContext<PwaContext | null>(null);
 
 export function PwaProvider({ children }: { children: ReactNode }) {
@@ -56,11 +56,11 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  async function install() {
-    if (!prompt || installing) return;
+  async function install(): Promise<"accepted" | "dismissed" | "unavailable"> {
+    if (!prompt || installing) return "unavailable";
     setInstalling(true);
-    try { await prompt.prompt(); await prompt.userChoice; setPrompt(null); }
-    catch { setPrompt(null); }
+    try { await prompt.prompt(); const choice = await prompt.userChoice; setPrompt(null); return choice.outcome; }
+    catch { setPrompt(null); return "unavailable"; }
     finally { setInstalling(false); }
   }
   function applyUpdate() {
@@ -72,14 +72,36 @@ export function PwaProvider({ children }: { children: ReactNode }) {
 
 }
 
-export function PwaInstallButton() {
+export function PwaInstallButton({ variant = "icon" }: { variant?: "icon" | "button" }) {
   const pwa = useContext(PwaContext);
-  if (!pwa?.canInstall) return null;
-  return <button className="icon-button" title="Installer FONCIARCH" aria-label="Installer FONCIARCH" disabled={pwa.installing} onClick={pwa.install}><Download size={18} /></button>;
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"intro" | "installing" | "done" | "dismissed">("intro");
+  if (!pwa?.canInstall && !open) return null;
+  const close = () => { setOpen(false); setStep("intro"); };
+  async function begin() {
+    setStep("installing");
+    const result = await pwa!.install();
+    setStep(result === "accepted" ? "done" : "dismissed");
+  }
+  return <>
+    {variant === "icon"
+      ? <button className="icon-button" title="Installer FONCIARCH" aria-label="Installer FONCIARCH" disabled={pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={18} /></button>
+      : <button className="button primary" disabled={!pwa?.canInstall || pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={17} />Installer FONCIARCH</button>}
+    {open && <div className="overlay pwa-install-overlay" onClick={close}><section className="pwa-install-dialog" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title" onClick={e => e.stopPropagation()}>
+      <button className="icon-button pwa-install-close" aria-label="Fermer" onClick={close}><X size={19}/></button>
+      <div className={`pwa-install-emblem ${step}`}><Smartphone size={27}/>{step === "done" && <CheckCircle2 size={17}/>}</div>
+      <span className="pwa-install-kicker">APPLICATION FONCIARCH</span>
+      <h2 id="pwa-install-title">{step === "installing" ? "Préparation de l’installation" : step === "done" ? "Installation confirmée" : step === "dismissed" ? "Installation non terminée" : "Installer l’application"}</h2>
+      <p>{step === "installing" ? "Confirmez l’installation dans la fenêtre de votre navigateur. FONCIARCH prépare son ajout à votre appareil." : step === "done" ? "Le navigateur a accepté l’installation. FONCIARCH sera disponible depuis l’écran d’accueil ou le menu des applications." : step === "dismissed" ? "L’installation n’a pas été confirmée. Vous pourrez la relancer quand vous le souhaitez." : "Ajoutez FONCIARCH à votre appareil pour l’ouvrir dans sa propre fenêtre et retrouver plus facilement votre espace de travail."}</p>
+      <div className="pwa-install-steps"><span className={step !== "intro" ? "complete" : "active"}><i>{step !== "intro" ? "✓" : "1"}</i>Autorisation du navigateur</span><span className={step === "done" ? "complete" : step === "installing" ? "active" : ""}><i>{step === "done" ? "✓" : "2"}</i>Ajout à l’appareil</span></div>
+      {step === "installing" && <div className="pwa-install-progress"><LoaderCircle size={16}/>En attente de confirmation du navigateur…</div>}
+      <div className="pwa-install-actions">{step === "intro" && <><button className="button" onClick={close}>Plus tard</button><button className="button primary" disabled={pwa?.installing} onClick={begin}><Download size={16}/>Continuer</button></>}{step === "installing" && <button className="button" onClick={close}>Fermer</button>}{(step === "done" || step === "dismissed") && <><button className="button" onClick={close}>Fermer</button>{step === "dismissed" && <button className="button primary" onClick={begin}>Réessayer</button>}</>}</div>
+    </section></div>}
+  </>;
 }
 
 export function PwaSettings() {
   const pwa = useContext(PwaContext);
   if (!pwa) return null;
-  return <section className="panel settings-panel pwa-settings"><div className="panel-heading"><div><h2><MonitorSmartphone size={19} /> Application FONCIARCH</h2><p>Un accès direct depuis votre ordinateur, tablette ou téléphone.</p></div>{pwa.installed && <span className="badge green"><CheckCircle2 size={14} /> Installée</span>}</div><div className="setting-content">{pwa.updateReady && <div className="update-inline"><p>Une nouvelle version est prête. Terminez votre saisie avant de recharger.</p><button className="button" disabled={pwa.updating} onClick={pwa.applyUpdate}><RefreshCw size={16} />{pwa.updating ? "Mise à jour…" : "Mettre à jour l’application"}</button></div>}<p>Retrouvez le logo FONCIARCH sur votre écran d’accueil et ouvrez l’application dans sa propre fenêtre.</p>{pwa.canInstall && <button className="button primary" disabled={pwa.installing} onClick={pwa.install}><Download size={17} />{pwa.installing ? "Installation…" : "Installer FONCIARCH"}</button>}{!pwa.installed && !pwa.canInstall && <details className="pwa-install-help"><summary>Comment installer l’application ?</summary><p>Ouvrez le menu de votre navigateur et cherchez « Installer l’application » ou « Ajouter à l’écran d’accueil ». Sur iPhone ou iPad, utilisez le menu Partager, puis « Sur l’écran d’accueil ».</p><p>Les options proposées dépendent du navigateur et de l’appareil.</p></details>}<div className="info-strip"><WifiOff size={18} /><p>Après une première préparation en ligne, l’application et les données déjà chargées restent accessibles hors connexion. Vos nouvelles saisies sont conservées sur cet appareil et synchronisées à la reconnexion.</p></div>{pwa.workerState === "development" && <p className="pwa-state">Mode développement : le cache hors connexion sera activé avec la version de production.</p>}{pwa.workerState === "unsupported" && <p className="pwa-state">L’installation nécessite HTTPS ou localhost et un navigateur compatible.</p>}{pwa.workerState === "error" && <p className="form-error">Le mode hors connexion n’a pas pu être préparé. Vérifiez votre connexion puis rechargez la page.</p>}{pwa.workerState === "ready" && <p className="pwa-state"><CheckCircle2 size={15} /> Application disponible hors connexion.</p>}</div></section>;
+  return <section className="panel settings-panel pwa-settings"><div className="panel-heading"><div><h2><MonitorSmartphone size={19} /> Application FONCIARCH</h2><p>Un accès direct depuis votre ordinateur, tablette ou téléphone.</p></div>{pwa.installed && <span className="badge green"><CheckCircle2 size={14} /> Installée</span>}</div><div className="setting-content">{pwa.updateReady && <div className="update-inline"><p>Une nouvelle version est prête. Terminez votre saisie avant de recharger.</p><button className="button" disabled={pwa.updating} onClick={pwa.applyUpdate}><RefreshCw size={16} />{pwa.updating ? "Mise à jour…" : "Mettre à jour l’application"}</button></div>}<p>Retrouvez le logo FONCIARCH sur votre écran d’accueil et ouvrez l’application dans sa propre fenêtre.</p>{pwa.canInstall && <PwaInstallButton variant="button"/>}{!pwa.installed && !pwa.canInstall && <details className="pwa-install-help"><summary>Comment installer l’application ?</summary><p>Ouvrez le menu de votre navigateur et cherchez « Installer l’application » ou « Ajouter à l’écran d’accueil ». Sur iPhone ou iPad, utilisez le menu Partager, puis « Sur l’écran d’accueil ».</p><p>Les options proposées dépendent du navigateur et de l’appareil.</p></details>}<div className="info-strip"><WifiOff size={18} /><p>Après une première préparation en ligne, l’application et les données déjà chargées restent accessibles hors connexion. Vos nouvelles saisies sont conservées sur cet appareil et synchronisées à la reconnexion.</p></div>{pwa.workerState === "development" && <p className="pwa-state">Mode développement : le cache hors connexion sera activé avec la version de production.</p>}{pwa.workerState === "unsupported" && <p className="pwa-state">L’installation nécessite HTTPS ou localhost et un navigateur compatible.</p>}{pwa.workerState === "error" && <p className="form-error">Le mode hors connexion n’a pas pu être préparé. Vérifiez votre connexion puis rechargez la page.</p>}{pwa.workerState === "ready" && <p className="pwa-state"><CheckCircle2 size={15} /> Application disponible hors connexion.</p>}</div></section>;
 }
