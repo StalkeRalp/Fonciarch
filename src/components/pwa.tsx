@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, Download, MonitorSmartphone, RefreshCw, WifiOff, X, LoaderCircle, Smartphone } from "lucide-react";
 
 type InstallPrompt = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
@@ -75,7 +76,9 @@ export function PwaProvider({ children }: { children: ReactNode }) {
 export function PwaInstallButton({ variant = "icon", alwaysVisible = false }: { variant?: "icon" | "button" | "landing"; alwaysVisible?: boolean }) {
   const pwa = useContext(PwaContext);
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<"intro" | "installing" | "done" | "dismissed" | "manual">("intro");
+  useEffect(() => { setMounted(true); }, []);
   if (pwa?.installed || (!pwa?.canInstall && !alwaysVisible && !open)) return null;
   const close = () => { setOpen(false); setStep("intro"); };
   async function begin() {
@@ -90,7 +93,7 @@ export function PwaInstallButton({ variant = "icon", alwaysVisible = false }: { 
       : variant === "landing"
         ? <button className="landing-install-button" disabled={pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={16}/>Installer</button>
         : <button className="button primary" disabled={!pwa?.canInstall || pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={17} />Installer FONCIARCH</button>}
-    {open && <div className="overlay pwa-install-overlay" onClick={close}><section className="pwa-install-dialog" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title" onClick={e => e.stopPropagation()}>
+    {open && mounted && createPortal(<div className="overlay pwa-install-overlay" onClick={close}><section className="pwa-install-dialog" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title" onClick={e => e.stopPropagation()}>
       <button className="icon-button pwa-install-close" aria-label="Fermer" onClick={close}><X size={19}/></button>
       <div className={`pwa-install-emblem ${step}`}><Smartphone size={27}/>{step === "done" && <CheckCircle2 size={17}/>}</div>
       <span className="pwa-install-kicker">APPLICATION FONCIARCH</span>
@@ -99,7 +102,7 @@ export function PwaInstallButton({ variant = "icon", alwaysVisible = false }: { 
       {step !== "manual" && <div className="pwa-install-steps"><span className={step !== "intro" ? "complete" : "active"}><i>{step !== "intro" ? "✓" : "1"}</i>Autorisation du navigateur</span><span className={step === "done" ? "complete" : step === "installing" ? "active" : ""}><i>{step === "done" ? "✓" : "2"}</i>Ajout à l’appareil</span></div>}
       {step === "installing" && <div className="pwa-install-progress"><LoaderCircle size={16}/>En attente de confirmation du navigateur…</div>}
       <div className="pwa-install-actions">{step === "intro" && <><button className="button" onClick={close}>Plus tard</button><button className="button primary" disabled={pwa?.installing} onClick={begin}>{pwa?.canInstall?<><Download size={16}/>Continuer</>:"Voir les étapes"}</button></>}{(step === "installing" || step === "manual") && <button className="button primary" onClick={close}>Compris</button>}{(step === "done" || step === "dismissed") && <><button className="button" onClick={close}>Fermer</button>{step === "dismissed" && <button className="button primary" onClick={begin}>Réessayer</button>}</>}</div>
-    </section></div>}
+    </section></div>, document.body)}
   </>;
 }
 

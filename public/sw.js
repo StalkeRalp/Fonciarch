@@ -1,5 +1,5 @@
 /* global self, caches */
-const CACHE = "fonciarch-pwa-6bd7e41f6b167bcc";
+const CACHE = "fonciarch-pwa-9e9d2993df186519";
 const STATIC = ["/modeles/titres-vierge.xlsx", "/modeles/titres-exemple.xlsx", "/", "/application", "/offline.html", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/icon-32.png", "/icons/maskable-512.png", "/manifest.webmanifest", "/favicon.ico"];
 
 self.addEventListener("install", event => {
