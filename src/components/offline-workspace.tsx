@@ -7,6 +7,8 @@ import { OfflineEngine, transport } from "../lib/offline/engine";
 import { dependentIds, emptyState, project, type LocalState } from "../lib/offline/model";
 const engine = new OfflineEngine(persistence, transport);
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000;
+const RETRY_BASE_INTERVAL = 30 * 1000;
+const SYNC_FAILURE_KEY = "fonciarch-sync-failures";
 const SYNC_ATTEMPT_KEY = "fonciarch-last-sync-attempt";
 export function useOfflineWorkspace() {
   const [state, setState] = useState<LocalState>(emptyState);
@@ -21,6 +23,7 @@ export function useOfflineWorkspace() {
   const workspace = useMemo(() => project(state), [state]);
   const running = useRef(false);
   const lastAttempt = useRef(0);
+  const retryCount = useRef(0);
   const channel = useRef<BroadcastChannel | null>(null);
   const mounted = useRef(true);
   const publish = useCallback((next: LocalState) => { if (mounted.current) setState(next); channel.current?.postMessage("changed"); }, []);
@@ -29,14 +32,29 @@ export function useOfflineWorkspace() {
     running.current = true;
     const run = async () => {
       let previous = lastAttempt.current;
-      try { previous = Math.max(previous, Number(localStorage.getItem(SYNC_ATTEMPT_KEY)) || 0); } catch { /* Le délai fonctionne aussi sans localStorage. */ }
+      let failures = retryCount.current;
+      try {
+        previous = Math.max(previous, Number(localStorage.getItem(SYNC_ATTEMPT_KEY)) || 0);
+        failures = Math.max(failures, Number(localStorage.getItem(SYNC_FAILURE_KEY)) || 0);
+      } catch { /* Le délai fonctionne aussi sans localStorage. */ }
+      retryCount.current = failures;
       const now = Date.now();
-      if (automatic && previous > 0 && now >= previous && now - previous < AUTO_SYNC_INTERVAL) return;
+      const retryInterval = failures > 0 ? Math.min(AUTO_SYNC_INTERVAL, RETRY_BASE_INTERVAL * 2 ** Math.min(failures - 1, 4)) : AUTO_SYNC_INTERVAL;
+      if (automatic && previous > 0 && now >= previous && now - previous < retryInterval) return;
       lastAttempt.current = now;
       try { localStorage.setItem(SYNC_ATTEMPT_KEY, String(now)); } catch { /* Copie en mémoire disponible. */ }
       if (mounted.current) setSyncing(true);
-      try { await engine.sync(publish); if (mounted.current) { setNetworkError(""); setOnline(true); } }
-      catch (error) { if (mounted.current) { setNetworkError(error instanceof Error ? error.message : "Serveur temporairement inaccessible."); setOnline(navigator.onLine); } }
+      try {
+        await engine.sync(publish);
+        retryCount.current = 0;
+        try { localStorage.removeItem(SYNC_FAILURE_KEY); } catch { /* La mémoire locale conserve le compteur. */ }
+        if (mounted.current) { setNetworkError(""); setOnline(true); }
+      }
+      catch (error) {
+        retryCount.current = Math.min(retryCount.current + 1, 5);
+        try { localStorage.setItem(SYNC_FAILURE_KEY, String(retryCount.current)); } catch { /* La mémoire locale conserve le compteur. */ }
+        if (mounted.current) { setNetworkError(error instanceof Error ? error.message : "Serveur temporairement inaccessible."); setOnline(navigator.onLine); }
+      }
       finally { if (mounted.current) setSyncing(false); }
     };
     try { if (navigator.locks) await navigator.locks.request("fonciarch-sync", { ifAvailable: automatic }, async lock => { if (lock) await run(); }); else await run(); }
