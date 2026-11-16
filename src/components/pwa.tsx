@@ -72,13 +72,14 @@ export function PwaProvider({ children }: { children: ReactNode }) {
 
 }
 
-export function PwaInstallButton({ variant = "icon" }: { variant?: "icon" | "button" }) {
+export function PwaInstallButton({ variant = "icon", alwaysVisible = false }: { variant?: "icon" | "button" | "landing"; alwaysVisible?: boolean }) {
   const pwa = useContext(PwaContext);
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"intro" | "installing" | "done" | "dismissed">("intro");
-  if (!pwa?.canInstall && !open) return null;
+  const [step, setStep] = useState<"intro" | "installing" | "done" | "dismissed" | "manual">("intro");
+  if (pwa?.installed || (!pwa?.canInstall && !alwaysVisible && !open)) return null;
   const close = () => { setOpen(false); setStep("intro"); };
   async function begin() {
+    if (!pwa?.canInstall) { setStep("manual"); return; }
     setStep("installing");
     const result = await pwa!.install();
     setStep(result === "accepted" ? "done" : "dismissed");
@@ -86,16 +87,18 @@ export function PwaInstallButton({ variant = "icon" }: { variant?: "icon" | "but
   return <>
     {variant === "icon"
       ? <button className="icon-button" title="Installer FONCIARCH" aria-label="Installer FONCIARCH" disabled={pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={18} /></button>
-      : <button className="button primary" disabled={!pwa?.canInstall || pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={17} />Installer FONCIARCH</button>}
+      : variant === "landing"
+        ? <button className="landing-install-button" disabled={pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={16}/>Installer</button>
+        : <button className="button primary" disabled={!pwa?.canInstall || pwa?.installing} onClick={() => { setStep("intro"); setOpen(true); }}><Download size={17} />Installer FONCIARCH</button>}
     {open && <div className="overlay pwa-install-overlay" onClick={close}><section className="pwa-install-dialog" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title" onClick={e => e.stopPropagation()}>
       <button className="icon-button pwa-install-close" aria-label="Fermer" onClick={close}><X size={19}/></button>
       <div className={`pwa-install-emblem ${step}`}><Smartphone size={27}/>{step === "done" && <CheckCircle2 size={17}/>}</div>
       <span className="pwa-install-kicker">APPLICATION FONCIARCH</span>
-      <h2 id="pwa-install-title">{step === "installing" ? "Préparation de l’installation" : step === "done" ? "Installation confirmée" : step === "dismissed" ? "Installation non terminée" : "Installer l’application"}</h2>
-      <p>{step === "installing" ? "Confirmez l’installation dans la fenêtre de votre navigateur. FONCIARCH prépare son ajout à votre appareil." : step === "done" ? "Le navigateur a accepté l’installation. FONCIARCH sera disponible depuis l’écran d’accueil ou le menu des applications." : step === "dismissed" ? "L’installation n’a pas été confirmée. Vous pourrez la relancer quand vous le souhaitez." : "Ajoutez FONCIARCH à votre appareil pour l’ouvrir dans sa propre fenêtre et retrouver plus facilement votre espace de travail."}</p>
-      <div className="pwa-install-steps"><span className={step !== "intro" ? "complete" : "active"}><i>{step !== "intro" ? "✓" : "1"}</i>Autorisation du navigateur</span><span className={step === "done" ? "complete" : step === "installing" ? "active" : ""}><i>{step === "done" ? "✓" : "2"}</i>Ajout à l’appareil</span></div>
+      <h2 id="pwa-install-title">{step === "installing" ? "Préparation de l’installation" : step === "done" ? "Installation confirmée" : step === "dismissed" ? "Installation non terminée" : step === "manual" ? "Depuis le menu du navigateur" : "Installer l’application"}</h2>
+      <p>{step === "installing" ? "Confirmez l’installation dans la fenêtre de votre navigateur. FONCIARCH prépare son ajout à votre appareil." : step === "done" ? "Le navigateur a accepté l’installation. FONCIARCH sera disponible depuis l’écran d’accueil ou le menu des applications." : step === "dismissed" ? "L’installation n’a pas été confirmée. Vous pourrez la relancer quand vous le souhaitez." : step === "manual" ? "Ouvrez le menu de votre navigateur et choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ». Sur iPhone, touchez Partager puis « Sur l’écran d’accueil »." : "Ajoutez FONCIARCH à votre appareil pour l’ouvrir dans sa propre fenêtre et retrouver plus facilement votre espace de travail."}</p>
+      {step !== "manual" && <div className="pwa-install-steps"><span className={step !== "intro" ? "complete" : "active"}><i>{step !== "intro" ? "✓" : "1"}</i>Autorisation du navigateur</span><span className={step === "done" ? "complete" : step === "installing" ? "active" : ""}><i>{step === "done" ? "✓" : "2"}</i>Ajout à l’appareil</span></div>}
       {step === "installing" && <div className="pwa-install-progress"><LoaderCircle size={16}/>En attente de confirmation du navigateur…</div>}
-      <div className="pwa-install-actions">{step === "intro" && <><button className="button" onClick={close}>Plus tard</button><button className="button primary" disabled={pwa?.installing} onClick={begin}><Download size={16}/>Continuer</button></>}{step === "installing" && <button className="button" onClick={close}>Fermer</button>}{(step === "done" || step === "dismissed") && <><button className="button" onClick={close}>Fermer</button>{step === "dismissed" && <button className="button primary" onClick={begin}>Réessayer</button>}</>}</div>
+      <div className="pwa-install-actions">{step === "intro" && <><button className="button" onClick={close}>Plus tard</button><button className="button primary" disabled={pwa?.installing} onClick={begin}>{pwa?.canInstall?<><Download size={16}/>Continuer</>:"Voir les étapes"}</button></>}{(step === "installing" || step === "manual") && <button className="button primary" onClick={close}>Compris</button>}{(step === "done" || step === "dismissed") && <><button className="button" onClick={close}>Fermer</button>{step === "dismissed" && <button className="button primary" onClick={begin}>Réessayer</button>}</>}</div>
     </section></div>}
   </>;
 }

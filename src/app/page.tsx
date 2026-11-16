@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { ArrowUpRight, Archive, CloudOff, FileSpreadsheet, MapPin, Search, ShieldCheck } from "lucide-react";
 import "./landing.css";
+import { PwaInstallButton } from "../components/pwa";
 
 export const metadata: Metadata = {
   title: "FONCIARCH — Registre des archives foncières",
@@ -26,7 +27,7 @@ export default function LandingPage() {
           <div className="landing-kicker"><span>GESTION DES ARCHIVES FONCIÈRES</span><span className="landing-kicker-code">01 — MFOUNDI</span></div>
           <h1>Un titre.<br />Une conservation.<br /><em>Un emplacement.</em></h1>
           <p>FONCIARCH rassemble les titres fonciers et leur classement pour faciliter la consultation du registre.</p>
-          <Link className="landing-primary" href="/application">Accéder à l’espace de travail <ArrowUpRight size={18} /></Link>
+          <div className="landing-actions"><Link className="landing-primary" href="/application">Accéder à l’espace de travail <ArrowUpRight size={18} /></Link><PwaInstallButton variant="landing" alwaysVisible /></div>
           <div className="landing-offline"><CloudOff size={16} /><span>Les saisies hors connexion sont conservées sur l’appareil et envoyées au retour du réseau.</span></div>
         </div>
 
