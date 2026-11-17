@@ -14,6 +14,8 @@ Ce fichier regroupe les trois migrations dans l’ordre : registre, Storage et c
 
 Si les tables du registre existent déjà et que vous préférez appliquer les nouveautés séparément, exécuter les migrations `202611120002_storage.sql` puis `202611120003_cadastres.sql`.
 
+Appliquer ensuite les migrations `202611170001_unique_title_numbers.sql` et `202611170002_skip_existing_import_titles.sql`. La première refuse de s’activer tant que des numéros déjà stockés sont en doublon. La seconde ignore les numéros existants ou répétés dans un import et ajoute les autres.
+
 Le projet contient déjà ses variables locales. Sur un nouvel hébergement, renseigner uniquement dans les secrets serveur :
 
 ```dotenv
@@ -84,7 +86,7 @@ Déposer un CSV, vérifier son objet et sa ligne dans fonciarch_files, puis rép
 
 Le champ Box accepte un numéro : saisir 15 affiche Box 15. À l’enregistrement d’un nouveau titre, le box manquant et le titre sont ajoutés atomiquement dans la file locale. Le serveur réutilise le box s’il a été créé entre-temps par un autre agent.
 
-La liste des cadastres affiche Mfoundi A, Mfoundi B et Mfoundi C, ainsi que le cadastre configuré pour le service s’il est différent. Le choix est conservé dans la fiche et dans les exports. Les doublons sont contrôlés sur numéro, catégorie et cadastre. Les boxes conservent un numéro global dans le registre physique du service ; ils ne sont pas dupliqués automatiquement par cadastre.
+La liste des cadastres affiche Mfoundi A, Mfoundi B et Mfoundi C, ainsi que le cadastre configuré pour le service s’il est différent. Le choix est conservé dans la fiche et dans les exports. Chaque numéro de titre est unique dans tout le registre, quelle que soit la conservation ou le cadastre. Les boxes conservent un numéro global dans le registre physique du service ; ils ne sont pas dupliqués automatiquement par cadastre.
 
 Pour corriger un emplacement existant, utiliser Déplacer afin de conserver le motif et l’historique.
 

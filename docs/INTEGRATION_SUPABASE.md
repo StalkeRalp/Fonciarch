@@ -64,7 +64,7 @@ Les tables sont : fonciarch_identity pour l’identité de la source ; fonciarch
 
 Les fonctions exposées au serveur sont fonciarch_workspace pour lire le registre, fonciarch_apply_operation pour appliquer une opération une seule fois et fonciarch_restore pour restaurer une copie dans un registre vide. Les fonctions auxiliaires construisent les fiches et appliquent les contrôles métier dans la même transaction.
 
-Les numéros des titres sont stockés en texte pour conserver les zéros initiaux. La combinaison numéro, catégorie et cadastre est unique. La saisie numérique 15 affiche Box 15 et crée cet emplacement lors de l’enregistrement s’il manque. La relation entre titre et box interdit un emplacement inexistant. L’import s’exécute dans une transaction : une erreur empêche la validation de tout le lot.
+Les numéros des titres sont stockés en texte pour conserver les zéros initiaux. Le numéro est unique dans tout le registre, toutes conservations et tous cadastres confondus. La saisie numérique 15 affiche Box 15 et crée cet emplacement lors de l’enregistrement s’il manque. La relation entre titre et box interdit un emplacement inexistant. L’import s’exécute dans une transaction : une erreur empêche la validation de tout le lot.
 
 Vérifier les tables et la restriction des clés publiques :
 
@@ -165,7 +165,7 @@ Dans Paramètres → Données et synchronisation, ouvrir **Examiner et résoudre
 
 Le choix **Écarter la saisie locale** retire l’opération et ses opérations dépendantes après confirmation intégrée dans la page. Les données déjà reçues par le serveur ne sont pas supprimées. Exporter la copie locale avant ce choix si des informations doivent être récupérées.
 
-Un doublon lors d’une création ne doit pas être transformé silencieusement en modification d’un titre existant. Vérifier le numéro et la catégorie. Conserver l’export, écarter la création rejetée si elle est erronée, puis saisir la correction avec le bon numéro ou ouvrir le titre déjà présent. Un box inconnu doit être créé ou corrigé avant un nouvel import.
+Un doublon lors d’une création ne doit pas être transformé silencieusement en modification d’un titre existant. Chaque numéro doit être unique, toutes conservations et tous cadastres confondus. Vérifier le numéro, conserver l’export, puis corriger la ligne ou ouvrir le titre déjà présent. Un box inconnu doit être créé ou corrigé avant un nouvel import.
 
 La file ne doit pas être manipulée directement dans les outils du navigateur. Le journal conserve les opérations reçues par le serveur ; l’identité de l’agent n’est pas établie tant que l’authentification reste suspendue.
 
@@ -192,7 +192,7 @@ Effectuer les essais dans un projet de test et sur les navigateurs réellement u
 5. Rétablir le réseau et laisser l’application ouverte. Vérifier que la file se vide et que le titre apparaît une seule fois depuis un second appareil.
 6. Simuler une coupure après l’écriture serveur, puis renvoyer la même opération. Vérifier qu’il n’existe qu’un seul titre et un seul événement pour cette opération.
 7. Modifier la même fiche depuis deux appareils. Vérifier le conflit et les deux choix de résolution, sans écrasement silencieux.
-8. Importer un CSV avec une erreur et un doublon. Vérifier le bilan et l’absence d’écriture partielle du lot rejeté côté serveur.
+8. Importer un CSV avec des numéros déjà enregistrés, des répétitions internes et de nouveaux titres. Vérifier que les doublons sont ignorés et que les nouveautés sont ajoutées. Puis importer une ligne invalide et vérifier que le lot reste bloqué.
 9. Simuler un serveur indisponible, un stockage local plein et un changement de source avec une file non vide. Vérifier la conservation des saisies et les messages intégrés à la page.
 10. Tester la sauvegarde, la restauration, les règles d’accès et les appareils partagés avant l’ouverture du service à plusieurs agents.
 

@@ -1,4 +1,4 @@
--- Base de test uniquement après les trois migrations ; objets Storage simulés pour la recette SQL.
+-- Base de test uniquement après toutes les migrations ; objets Storage simulés pour la recette SQL.
 
 begin;
 DO $checks$
@@ -6,7 +6,7 @@ declare first_title jsonb; second_title jsonb; first_file jsonb; again_file json
 begin
  if not exists(select 1 from public.fonciarch_boxes where number='15') then perform public.fonciarch_apply_operation(gen_random_uuid(),'box','{"number":"15"}'); end if;
  first_title:=public.fonciarch_apply_operation(gen_random_uuid(),'title',jsonb_build_object('clientId',a,'number','1500','category','A','box','15','cadastre','Mfoundi B'));
- second_title:=public.fonciarch_apply_operation(gen_random_uuid(),'title',jsonb_build_object('clientId',b,'number','1500','category','A','box','15','cadastre','Mfoundi C'));
+ second_title:=public.fonciarch_apply_operation(gen_random_uuid(),'title',jsonb_build_object('clientId',b,'number','1501','category','A','box','15','cadastre','Mfoundi C'));
  if first_title->'result'->>'cadastre'<>'Mfoundi B' or second_title->'result'->>'cadastre'<>'Mfoundi C' then raise exception 'cadastre non conservé'; end if;
  if public.fonciarch_workspace()->'capabilities'->>'titleCadastre'<>'true' then raise exception 'capacités absentes'; end if;
  if exists(select 1 from storage.buckets where id like 'fonciarch-%' and public) then raise exception 'bucket public'; end if;

@@ -19,11 +19,11 @@ Exemple fictif à remplacer, chaque élément étant dans sa cellule :
 |---|---|---|---|---|
 | 00125 | A | 15 | Mfoundi A | Disponible |
 | 00126 | B | 15 | Mfoundi A | Archivé |
-| 00125 | A | 16 | Mfoundi B | Disponible |
+| 00127 | C | 16 | Mfoundi B | Disponible |
 
 Les boxes 15 et 16 seront créés automatiquement s’ils n’existent pas. Une ligne représente un titre. Ne pas ajouter de titre de document avant les en-têtes, de cellules fusionnées, de sous-totaux ou de séparateurs supplémentaires. Chaque colonne doit avoir un nom unique et chaque ligne le même nombre de colonnes. Les colonnes supplémentaires, dont les observations, ne sont pas importées actuellement.
 
-La combinaison **Numéro + Conservation + Cadastre** doit être unique dans le fichier et dans le registre. Changer le box ne permet pas de réimporter un titre existant : utiliser le déplacement de titre. Les zéros initiaux des numéros sont conservés ; ne pas alterner 00125 et 125 pour désigner le même titre. Les noms de cadastre doivent garder la même casse, les mêmes accents et espaces pour éviter des cadastres distincts par erreur.
+Le **numéro du titre doit être unique dans tout le registre**, quelle que soit la conservation, le cadastre ou le box. Si un numéro est déjà enregistré, la ligne est ignorée sans modifier son titre ni son emplacement. Si un numéro apparaît plusieurs fois dans le fichier, seule sa première ligne valide est conservée. L’import continue avec les autres nouveaux numéros. Pour changer l’emplacement d’un titre existant, utiliser le déplacement de titre. Les zéros initiaux des numéros sont conservés ; ne pas alterner 00125 et 125 pour désigner le même titre.
 
 Une erreur ou un doublon détecté bloque tout le fichier. Corriger les lignes signalées puis recharger. La confirmation reste nécessaire avant l’enregistrement. Si un conflit apparaît lors de la synchronisation avec un autre appareil, l’opération reste signalée dans le panneau de synchronisation sans écraser les titres existants.
 

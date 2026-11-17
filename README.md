@@ -50,7 +50,7 @@ Navigateur (Next.js / React / PWA)
 
 Supabase est l’unique backend central. IndexedDB est une copie de travail sur l’appareil et une file d’attente ; ce n’est pas un serveur alternatif. La clé Supabase privilégiée est utilisée uniquement dans le code serveur. Elle ne doit jamais être incluse dans le bundle navigateur.
 
-Le schéma conserve les numéros comme du texte afin de garder les zéros initiaux. La série est calculée à partir du premier chiffre du numéro (de 0 à 9). La conservation est A, B ou C. L’unicité métier d’un titre est contrôlée par son numéro, sa conservation et son cadastre.
+Le schéma conserve les numéros comme du texte afin de garder les zéros initiaux. La série est calculée à partir du premier chiffre du numéro (de 0 à 9). La conservation est A, B ou C. Chaque numéro de titre est unique dans tout le registre.
 
 ## Prérequis
 
@@ -92,10 +92,21 @@ Pour une nouvelle base, exécuter dans le SQL Editor Supabase, dans cet ordre, l
 3. `202611120003_cadastres.sql`
 4. `202611120004_import_auto_boxes.sql`
 5. `202611140001_manage_records.sql`
+6. `202611170001_unique_title_numbers.sql`
+7. `202611170002_skip_existing_import_titles.sql`
 
-La dernière migration ajoute les opérations de modification et de suppression des titres et boxes. Si une base utilise déjà les migrations précédentes, exécuter seulement la migration manquante `202611140001_manage_records.sql`.
+La migration `202611170001_unique_title_numbers.sql` impose l’unicité globale du numéro de titre dans PostgreSQL. La migration `202611170002_skip_existing_import_titles.sql` ignore les numéros déjà présents pendant un import et continue avec les nouveaux. Pour une base existante, exécuter les migrations manquantes après les précédentes. La première s’arrête si des doublons sont déjà présents : les repérer avec la requête ci-dessous, les corriger manuellement, puis relancer la migration.
 
-Le dépôt contient également `supabase/INSTALLATION_COMPLETE.sql` et `supabase/MISE_A_JOUR_SYNCHRONISATION.sql`, des scripts historiques/consolidés. Pour éviter de déployer un schéma incomplet, privilégier la suite ordonnée des migrations ci-dessus, en particulier pour une nouvelle installation.
+```sql
+select number, count(*) as occurrences,
+       string_agg(category || ' / ' || cadastre || ' / box ' || box, '; ' order by category, cadastre, box) as emplacements
+from public.fonciarch_titles
+group by number
+having count(*) > 1
+order by number;
+```
+
+Le dépôt contient également `supabase/INSTALLATION_COMPLETE.sql` et `supabase/MISE_A_JOUR_SYNCHRONISATION.sql`, des scripts historiques/consolidés. Après leur exécution, appliquer aussi les migrations `202611170001_unique_title_numbers.sql` et `202611170002_skip_existing_import_titles.sql`. Pour éviter de déployer un schéma incomplet, privilégier la suite ordonnée des migrations ci-dessus, en particulier pour une nouvelle installation.
 
 ### 3. Vérifier la connexion
 
@@ -159,7 +170,7 @@ Le classeur Excel doit contenir une feuille nommée `Titres` (obligatoire si le 
 
 Le numéro du box est un entier positif, sans obligation de limite métier fixe. Un box absent du registre est créé automatiquement pendant l’import. Les statuts acceptés sont `Disponible`, `Sorti`, `Introuvable` et `Archivé`. Les observations ne sont pas importées par le modèle courant. Le numéro de série n’est pas une colonne à importer : il correspond au premier chiffre du numéro du titre.
 
-La combinaison numéro + conservation + cadastre doit être unique. L’import est validé en lot : une erreur bloquante empêche l’enregistrement du fichier entier. Pour les consignes précises et les exemples, consulter [docs/FORMAT_IMPORT_TITRES.md](docs/FORMAT_IMPORT_TITRES.md).
+Chaque numéro de titre doit être unique dans tout le registre, quelle que soit la conservation, le cadastre ou le box. Les numéros déjà enregistrés et les répétitions du fichier sont ignorés ; l’import continue avec les nouveaux titres. Les autres erreurs de données bloquent le lot. Pour les consignes précises et les exemples, consulter [docs/FORMAT_IMPORT_TITRES.md](docs/FORMAT_IMPORT_TITRES.md).
 
 ## Mode hors connexion et synchronisation
 
